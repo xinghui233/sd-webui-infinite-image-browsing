@@ -19,7 +19,6 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
     stackViewEl,
     canLoadNext,
     previewIdx,
-    props,
     walker,
     getViewableAreaFiles
   } = useHookShareState().toRefs()
@@ -43,9 +42,10 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
   })
 
   const loadNextDirLoading = ref(false)
+  const isWalkerMode = computed(() => !!walker.value)
 
   const loadNextDir = async () => {
-    if (loadNextDirLoading.value || props.value.mode !== 'walk' || !canLoadNext.value) {
+    if (loadNextDirLoading.value || !walker.value || !canLoadNext.value) {
       return
     }
     try {
@@ -82,7 +82,7 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
 
   state.useEventListen('loadNextDir', makeAsyncFunctionSingle(async (isFullScreenPreview = false) => {
     await fetchDataUntilViewFilled(isFullScreenPreview)
-    if (props.value.mode === 'walk') {
+    if (walker.value) {
       onViewableAreaChangeDebounced()
     }
   }))
@@ -134,6 +134,7 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
     onScroll,
     loadNextDir,
     loadNextDirLoading,
+    isWalkerMode,
     canLoadNext,
     itemSize,
     cellWidth,

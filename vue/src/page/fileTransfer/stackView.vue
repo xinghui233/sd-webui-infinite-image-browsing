@@ -42,6 +42,8 @@ const props = defineProps<{
    */
   path?: string
   mode?: Props['mode']
+  normalWalkBasePath?: string
+  normalWalkStartDepth?: number
   /**
    * 页面栈,跳过不必要的api请求
    */
@@ -59,7 +61,8 @@ void stackViewEl.value
 const { currLocation, currPage, refresh, copyLocation, back, openNext, stack, quickMoveTo,
   addToSearchScanPathAndQuickMove, locInputValue, isLocationEditing,
   onLocEditEnter, onEditBtnClick, share, selectAll, onCreateFloderBtnClick, onWalkBtnClick,
-  showWalkButton, searchInCurrentDir, backToLastUseTo, polling, onPollRefreshClick
+  showWalkButton, searchInCurrentDir, backToLastUseTo, polling, onPollRefreshClick,
+  breadcrumbItems, onBreadcrumbItemClick
 } = useLocation()
 const {
   gridItems,
@@ -70,6 +73,7 @@ const {
   itemSize,
   loadNextDir,
   loadNextDirLoading,
+  isWalkerMode,
   canLoadNext,
   onScroll,
   cellWidth,
@@ -156,8 +160,8 @@ watch(
           <AInput v-if="isLocationEditing" style="flex: 1" v-model:value="locInputValue" @click.stop @keydown.stop
             @press-enter="onLocEditEnter" allow-clear></AInput>
           <a-breadcrumb style="flex: 1" v-else>
-            <a-breadcrumb-item v-for="(item, idx) in stack" :key="idx">
-              <a @click.prevent="back(idx)">{{ item.curr === '/' ? $t('root') : item.curr.replace(/:\/$/, $t('drive'))
+            <a-breadcrumb-item v-for="item in breadcrumbItems" :key="item.key">
+              <a @click.prevent="onBreadcrumbItemClick(item)">{{ item.label === '/' ? $t('root') : item.label.replace(/:\/$/, $t('drive'))
                 }}</a>
             </a-breadcrumb-item>
           </a-breadcrumb>
@@ -279,7 +283,7 @@ watch(
           </template>
           <template #after>
             <div style="padding: 16px 0 512px;">
-              <AButton v-if="props.mode === 'walk'" @click="loadNextDir" :loading="loadNextDirLoading" block type="primary"
+              <AButton v-if="isWalkerMode" @click="loadNextDir" :loading="loadNextDirLoading" block type="primary"
                 :disabled="!canLoadNext" ghost>
                 {{ $t('loadNextPage') }}</AButton>
             </div>

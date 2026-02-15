@@ -135,6 +135,8 @@ You can specify which snapshot to restore to when starting IIB in the global set
   walkModeDoc: 'Browse all files in a specified folder without paging, using infinite scrolling to display them. DFS will be used to traverse all files. Note: Sorting is only performed within the same layer in this mode.',
   normalModelDoc: 'Similar to the Windows file browser, with high flexibility. But exceptions may occur when accessing cloud storage or similar SMB.',
   fixedModeDoc: 'Similar to Normal mode, but with faster initial page speed, better compatibility, and slightly less flexibility. If you encounter an exception in Normal mode, you can try this mode instead.',
+  normalWalkModeDoc: 'Open the root folder in Normal mode first and only show files/folders in that root. Entering its subfolders switches to Walk mode automatically while keeping a clickable path for quick return.',
+  normalWalkStartDepth: 'Walk start depth',
   type: 'Type',
   filterByKeyword: 'Filter tags by keyword',
   loadmore: 'Load more',
