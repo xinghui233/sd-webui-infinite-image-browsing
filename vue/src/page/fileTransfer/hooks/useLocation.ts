@@ -58,7 +58,7 @@ export function useLocation () {
   onMounted(async () => {
     if (!stack.value.length) {
       // 有传入stack时直接使用传入的
-      if (props.value.mode === 'scanned-fixed' || props.value.mode === 'walk') {
+      if (props.value.mode === 'scanned-fixed' || props.value.mode === 'walk' || props.value.mode === 'normale_walk') {
         stack.value = [{ files: [], curr: props.value.path ?? '' }]
       } else {
         const resp = await getTargetFolderFiles('/')
@@ -90,8 +90,9 @@ export function useLocation () {
         const prefix = {
           walk: 'Walk',
           'scanned-fixed': 'Fixed',
+          normale_walk: null,
           scanned: null
-        }[props.value.mode ?? 'scanned']
+        }[props.value.mode ?? 'scanned'] ?? null
         const wrap = (v: string) => prefix ? `${prefix}: ${v}` : v
         const shortPath = global.getShortPath(loc)
         return wrap(shortPath.length > 24 && dirname ? dirname : shortPath)
@@ -112,8 +113,19 @@ export function useLocation () {
 
   const copyLocation = () => copy2clipboardI18n(currLocation.value)
 
+  interface BreadcrumbItem {
+    key: string
+    label: string
+    idx: number
+    targetPath: string
+  }
+
   const openNext = async (file: FileNodeInfo) => {
     if (file.type !== 'dir') {
+      return
+    }
+    if (props.value.mode === 'normale_walk') {
+      await handleMultiModeTo(file.fullpath)
       return
     }
     try {
@@ -139,9 +151,60 @@ export function useLocation () {
     if (props.value.mode == 'walk') {
       return
     }
+    if (props.value.mode === 'normale_walk') {
+      const target = stack.value[idx]?.curr
+      if (target && Path.normalize(target) !== Path.normalize(currLocation.value)) {
+        void handleMultiModeTo(target)
+      }
+      return
+    }
     while (idx < stack.value.length - 1) {
       stack.value.pop()
     }
+  }
+
+  const breadcrumbItems = computed((): BreadcrumbItem[] => {
+    if (props.value.mode !== 'normale_walk') {
+      return stack.value.map((item, idx) => ({
+        key: `${idx}-${item.curr}`,
+        label: item.curr,
+        idx,
+        targetPath: item.curr
+      }))
+    }
+    const normalized = Path.normalize(currLocation.value)
+    if (!normalized) {
+      return []
+    }
+    const frags = Path.splitPath(normalized)
+    const items: BreadcrumbItem[] = []
+    let acc = normalized.startsWith('/') ? '/' : ''
+    if (acc) {
+      items.push({
+        key: '0-root',
+        label: '/',
+        idx: 0,
+        targetPath: '/'
+      })
+    }
+    for (const frag of frags) {
+      acc = acc ? Path.join(acc, frag) : frag
+      items.push({
+        key: `${items.length}-${acc}`,
+        label: frag,
+        idx: items.length,
+        targetPath: acc
+      })
+    }
+    return items
+  })
+
+  const onBreadcrumbItemClick = (item: BreadcrumbItem) => {
+    if (props.value.mode === 'normale_walk') {
+      void handleMultiModeTo(item.targetPath)
+      return
+    }
+    back(item.idx)
   }
 
   const backToLastUseTo = () => {
@@ -157,12 +220,80 @@ export function useLocation () {
     return a == b
   }
 
+  const normalizePathForCompare = (path: string) => {
+    const normalized = Path.normalize(path)
+    if (global.conf?.is_win) {
+      return normalized.toLowerCase()
+    }
+    return normalized
+  }
+
+  const isSubPath = (path: string, basePath: string) => {
+    const normalizedPath = normalizePathForCompare(path)
+    const normalizedBasePath = normalizePathForCompare(basePath)
+    return normalizedPath === normalizedBasePath || normalizedPath.startsWith(`${normalizedBasePath}/`)
+  }
+
+  const getDepthFromBase = (path: string, basePath: string) => {
+    if (!isSubPath(path, basePath)) {
+      return 0
+    }
+    const normalizedPath = normalizePathForCompare(path)
+    const normalizedBasePath = normalizePathForCompare(basePath)
+    return Math.max(0, Path.splitPath(normalizedPath).length - Path.splitPath(normalizedBasePath).length)
+  }
+
+  const getNormaleWalkBasePath = () => {
+    const pane = getPane.value()
+    const fallback = props.value.normalWalkBasePath ?? props.value.path ?? currLocation.value ?? ''
+    if (pane && !pane.normalWalkBasePath) {
+      pane.normalWalkBasePath = fallback
+    }
+    return pane?.normalWalkBasePath ?? fallback
+  }
+
+  const getNormaleWalkStartDepth = () => {
+    const pane = getPane.value()
+    const fallback = Math.max(1, Number(props.value.normalWalkStartDepth ?? 1))
+    const current = Math.max(1, Number(pane?.normalWalkStartDepth ?? fallback))
+    if (pane && pane.normalWalkStartDepth !== current) {
+      pane.normalWalkStartDepth = current
+    }
+    return current
+  }
+
+  const handleToNormaleWalk = async (path: string) => {
+    const pane = getPane.value()
+    let basePath = getNormaleWalkBasePath() || path
+    const startDepth = getNormaleWalkStartDepth()
+    if (!isSubPath(path, basePath)) {
+      basePath = path
+    }
+    const depthFromBase = getDepthFromBase(path, basePath)
+    if (pane) {
+      pane.path = path
+      pane.normalWalkBasePath = basePath
+      pane.normalWalkStartDepth = startDepth
+    }
+    if (depthFromBase < startDepth) {
+      const { files } = await getTargetFolderFiles(path)
+      stack.value = [{ files, curr: path }]
+      return
+    }
+    stack.value = [{ files: [], curr: path }]
+  }
 
 
   const handleMultiModeTo = async (path: string) => {
     // console.log('call handleMultiModeTo', path)
     if (props.value.mode === 'walk') {
       getPane.value().path = path
+    } else if (props.value.mode === 'normale_walk') {
+      if (!Path.isAbsolute(path)) {
+        const base = currLocation.value || getNormaleWalkBasePath() || global.conf?.sd_cwd || '/'
+        path = Path.join(base, path)
+      }
+      await handleToNormaleWalk(path)
     } else if (props.value.mode === 'scanned-fixed') {
       await openNext({ fullpath: path, name: path, type: 'dir' } as FileNodeInfo)
     } else {
@@ -242,7 +373,7 @@ export function useLocation () {
     if (isPollRefresh === true && previewing.value) {
       return // fullscreen previewing时不刷新
     }
-    if (props.value.mode === 'walk' && walker.value) {
+    if (walker.value) {
       const currpos = scroller.value?.$_endIndex ?? 64
       if (global.autoRefreshWalkMode &&
         currpos < global.autoRefreshWalkModePosLimit &&
@@ -414,6 +545,8 @@ export function useLocation () {
     showWalkButton,
     searchInCurrentDir,
     backToLastUseTo,
+    breadcrumbItems,
+    onBreadcrumbItemClick,
     ...usePollRefresh(() => lazyRefresh(true))
   }
 }

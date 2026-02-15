@@ -16,6 +16,7 @@ import { hasNewRelease, version, latestCommit } from '@/util/versionManager'
 import { isTauri } from '@/util/env'
 import { message } from 'ant-design-vue'
 import { useSettingSync } from '@/util'
+import * as Path from '@/util/path'
 
 const global = useGlobalStore()
 const imgsli = useImgSliStore()
@@ -52,8 +53,36 @@ const compCnMap: Partial<Record<TabPane['type'], string>> = {
   'random-image': t('randomImage'),
   'global-setting': t('globalSettings'),
 }
-type FileTransModeIn = 'preset' | ExtraPathType
-const createPane = (type: TabPane['type'], path?: string, mode?: FileTransModeIn) => {
+type FileTransModeIn = 'preset' | ExtraPathType | 'normale_walk'
+type LaunchMode = FileTransModeIn
+const toLaunchModes = (types: FileTransModeIn[]) => {
+  const hasWalk = types.includes('walk')
+  const hasScanned = types.includes('scanned')
+  const modes = types.filter(v => v !== 'walk') as FileTransModeIn[]
+  if (hasWalk && hasScanned) {
+    return ['normale_walk', ...modes.filter(v => v !== 'scanned')] as LaunchMode[]
+  }
+  return modes as LaunchMode[]
+}
+
+const isLaunchModeRemovable = (mode: LaunchMode) => mode === 'scanned' || mode === 'scanned-fixed' || mode === 'normale_walk'
+const toRemoveTypes = (mode: LaunchMode): ExtraPathType | ExtraPathType[] => {
+  if (mode === 'normale_walk') {
+    return ['scanned', 'walk']
+  }
+  return mode as ExtraPathType
+}
+
+const resolveNormalWalkStartDepth = (path?: string, mode?: FileTransModeIn, candidate?: number) => {
+  if (!path || mode !== 'normale_walk') {
+    return undefined
+  }
+  const normalized = Path.normalize(path)
+  const depth = Number(candidate ?? global.normalWalkStartDepthMap[normalized] ?? 1)
+  return Math.max(1, Math.floor(depth || 1))
+}
+
+const createPane = (type: TabPane['type'], path?: string, mode?: FileTransModeIn, normalWalkStartDepth?: number) => {
   let pane: TabPane
   switch (type) {
     case 'grid-view':
@@ -72,33 +101,38 @@ const createPane = (type: TabPane['type'], path?: string, mode?: FileTransModeIn
       pane = { type, name: compCnMap[type]!, key: Date.now() + uniqueId() }
       break
     case 'local':
+      {
+        const paneMode = mode === 'scanned-fixed' || mode === 'walk' || mode === 'normale_walk' ? mode : 'scanned'
       pane = {
         type,
         name: compCnMap[type]!,
         key: Date.now() + uniqueId(),
         path,
-        mode: mode === 'scanned-fixed' || mode === 'walk' ? mode : 'scanned'
+        mode: paneMode,
+        normalWalkBasePath: paneMode === 'normale_walk' ? path : undefined,
+        normalWalkStartDepth: resolveNormalWalkStartDepth(path, paneMode, normalWalkStartDepth)
+      }
       }
   }
   return pane
 }
-const openInCurrentTab = (type: TabPane['type'], path?: string, mode?: FileTransModeIn) => {
-  const pane = createPane(type, path, mode)
+const openInCurrentTab = (type: TabPane['type'], path?: string, mode?: FileTransModeIn, normalWalkStartDepth?: number) => {
+  const pane = createPane(type, path, mode, normalWalkStartDepth)
   if (!pane) return
   const tab = global.tabList[props.tabIdx]
   tab.panes.splice(props.paneIdx, 1, pane)
   tab.key = pane.key
 }
 
-const openInNewTab = (type: TabPane['type'], path?: string, mode?: FileTransModeIn) => {
-  const pane = createPane(type, path, mode)
+const openInNewTab = (type: TabPane['type'], path?: string, mode?: FileTransModeIn, normalWalkStartDepth?: number) => {
+  const pane = createPane(type, path, mode, normalWalkStartDepth)
   if (!pane) return
   const tab = global.tabList[props.tabIdx]
   tab.panes.push(pane)
 }
 
-const openOnTheRight = (type: TabPane['type'], path?: string, mode?: FileTransModeIn) => {
-  const pane = createPane(type, path, mode)
+const openOnTheRight = (type: TabPane['type'], path?: string, mode?: FileTransModeIn, normalWalkStartDepth?: number) => {
+  const pane = createPane(type, path, mode, normalWalkStartDepth)
   if (!pane) return
   let tab = global.tabList[props.tabIdx + 1]
   if (!tab) {
@@ -119,7 +153,7 @@ const walkModeSupportedDir = computed(() =>
       k === 'outdir_img2img_samples' ||
       k === 'outdir_txt2img_grids' ||
       k === 'outdir_img2img_grids' ||
-      types.includes('walk')
+      (types.includes('walk') && !types.includes('scanned'))
   )
 )
 const canpreviewInNewWindow = window.parent !== window
@@ -143,9 +177,12 @@ const machine = computed(() => {
 const modePrefix = (mode?: FileTransModeIn) => {
   if (!mode || mode === 'scanned') return ''
   if (mode === 'walk') return 'Walk: '
+  if (mode === 'normale_walk') return 'Normal+Walk: '
   return 'Fixed: '
 
 }
+
+const getNormalWalkStartDepth = (dir: any) => dir?.normalWalkStartDepth
 
 const modes = computed(() => {
   const modes = [] as string[]
@@ -322,17 +359,17 @@ const modes = computed(() => {
             v-for="dir in global.quickMovePaths.filter(({ types: ts }) => ts.includes('cli_access_only') || ts.includes('preset') || ts.includes('scanned') || ts.includes('scanned-fixed')) "
             :key="dir.key">
 
-            <actionContextMenu v-for="t in dir.types.filter(v => v !== 'walk')" :key="t"
-              @open-in-new-tab="openInNewTab('local', dir.dir, t)"
-              @open-on-the-right="openOnTheRight('local', dir.dir, t)">
+            <actionContextMenu v-for="t in toLaunchModes(dir.types)" :key="t"
+              @open-in-new-tab="openInNewTab('local', dir.dir, t, t === 'normale_walk' ? getNormalWalkStartDepth(dir) : undefined)"
+              @open-on-the-right="openOnTheRight('local', dir.dir, t, t === 'normale_walk' ? getNormalWalkStartDepth(dir) : undefined)">
 
-              <li class="item rem" @click.prevent="openInCurrentTab('local', dir.dir, t)">
-                <span class="text line-clamp-2"><span v-if="t == 'scanned-fixed'" class="fixed">Fixed</span>{{ dir.zh
+              <li class="item rem" @click.prevent="openInCurrentTab('local', dir.dir, t, t === 'normale_walk' ? getNormalWalkStartDepth(dir) : undefined)">
+                <span class="text line-clamp-2"><span v-if="t == 'scanned-fixed'" class="fixed">Fixed</span><span v-if="t == 'normale_walk'" class="fixed">Normal+Walk</span>{{ dir.zh
                   }}</span>
-                <template v-if="dir.can_delete && (t === 'scanned-fixed' || t === 'scanned')">
+                <template v-if="dir.can_delete && isLaunchModeRemovable(t)">
                   <AButton type="link" @click.stop="onAliasExtraPathClick(dir.dir)">{{ $t('alias') }}
                   </AButton>
-                  <AButton type="link" @click.stop="onRemoveExtraPathClick(dir.dir, t)">{{ $t('remove') }}
+                  <AButton type="link" @click.stop="onRemoveExtraPathClick(dir.dir, toRemoveTypes(t))">{{ $t('remove') }}
                   </AButton>
                 </template>
               </li>

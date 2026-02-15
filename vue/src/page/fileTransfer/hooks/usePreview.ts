@@ -18,7 +18,7 @@ export function usePreview (spec?: { loadNext?: () => void }) {
     previewing,
     sortedFiles: files,
     scroller,
-    props
+    walker
   } = useHookShareState().toRefs()
   const { state } = useHookShareState()
   let waitScrollTo = null as number | null
@@ -57,7 +57,7 @@ export function usePreview (spec?: { loadNext?: () => void }) {
     if (spec?.loadNext) {
       return spec.loadNext()
     }
-    if (props.value.mode === 'walk') {
+    if (walker.value) {
       if (canLoadNext.value) {
         message.info(t('loadingNextFolder'))
         eventEmitter.value.emit('loadNextDir', true) // 如果在全屏查看时外面scroller可能还停留在很久之前，使用全屏查看的索引

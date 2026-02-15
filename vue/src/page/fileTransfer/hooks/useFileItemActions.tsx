@@ -295,7 +295,9 @@ export function useFileItemActions (
           path: targetPath,
           name: t('local'),
           stackKey: path,
-          mode: props.value.mode ?? 'scanned'
+          mode: props.value.mode ?? 'scanned',
+          normalWalkBasePath: props.value.mode === 'normale_walk' ? props.value.normalWalkBasePath : undefined,
+          normalWalkStartDepth: props.value.mode === 'normale_walk' ? props.value.normalWalkStartDepth : undefined
         }
         tab.panes.push(pane)
         tab.key = pane.key

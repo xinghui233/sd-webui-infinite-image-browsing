@@ -57,14 +57,50 @@ export const { useHookShareState } = createTypedShareStateHook(
     const currLocation = computed(() => {
       if(props.value.mode === 'scanned-fixed') return stack.value?.[0]?.curr ?? ''
       if(props.value.mode === 'walk') return props.value.path ?? ''
+      if (props.value.mode === 'normale_walk') return props.value.path ?? stack.value?.[0]?.curr ?? ''
       return stack.value.length === 1  ? '/' : currLocationScannedOnlyAvailable.value
     })
     const sortMethod = ref(global.defaultSortingMethod)
-    const walker = ref(props.value.mode == 'walk' ? new Walker(props.value.path!, sortMethod.value) : undefined)
-    watch([() => props.value.mode, () => props.value.path, sortMethod], async ([mode, path, method]) => {
+    const normalizePathForCompare = (path: string) => {
+      const normalized = Path.normalize(path)
+      if (global.conf?.is_win) {
+        return normalized.toLowerCase()
+      }
+      return normalized
+    }
+    const getDepthFromBase = (path: string, basePath: string) => {
+      const normalizedPath = normalizePathForCompare(path)
+      const normalizedBasePath = normalizePathForCompare(basePath)
+      if (normalizedPath === normalizedBasePath) {
+        return 0
+      }
+      if (!normalizedPath.startsWith(`${normalizedBasePath}/`)) {
+        return 0
+      }
+      return Math.max(0, Path.splitPath(normalizedPath).length - Path.splitPath(normalizedBasePath).length)
+    }
+    const shouldUseWalker = (
+      mode = props.value.mode,
+      path = props.value.path,
+      normalWalkBasePath = props.value.normalWalkBasePath,
+      normalWalkStartDepth = props.value.normalWalkStartDepth
+    ) => {
       if (mode === 'walk') {
-        walker.value = new Walker(path!, method)
+        return true
+      }
+      if (mode !== 'normale_walk' || !path || !normalWalkBasePath) {
+        return false
+      }
+      const startDepth = Math.max(1, Number(normalWalkStartDepth ?? 1))
+      return getDepthFromBase(path, normalWalkBasePath) >= startDepth
+    }
+    const walker = ref(shouldUseWalker() && props.value.path ? new Walker(props.value.path, sortMethod.value) : undefined)
+    watch([() => props.value.mode, () => props.value.path, () => props.value.normalWalkBasePath, () => props.value.normalWalkStartDepth, sortMethod], async ([mode, path, normalWalkBasePath, normalWalkStartDepth, method]) => {
+      if (shouldUseWalker(mode, path, normalWalkBasePath, normalWalkStartDepth) && path) {
+        walker.value = new Walker(path, method)
+        if (mode === 'walk') {
         stack.value = [{ files: [], curr: path!  }]
+        }
         await delay()
         await walker.value?.reset()
         events.eventEmitter.emit('loadNextDir')
@@ -175,7 +211,9 @@ export interface Props {
   tabIdx: number
   paneIdx: number
   path?: string
-  mode?: 'walk' | 'scanned' | 'scanned-fixed'
+  mode?: 'walk' | 'scanned' | 'scanned-fixed' | 'normale_walk'
+  normalWalkBasePath?: string
+  normalWalkStartDepth?: number
   fixed?: boolean
 }
 

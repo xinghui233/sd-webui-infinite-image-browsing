@@ -107,6 +107,8 @@ export interface FileTransferTabPane extends TabPaneBase {
   type: 'local'
   path?: string
   mode?: FileTransferProps['mode']
+  normalWalkBasePath?: string
+  normalWalkStartDepth?: number
   stackKey?: string
 }
 
@@ -211,7 +213,8 @@ export const presistKeys = [
   'magicSwitchTiktokView',
   'showRandomImageInStartup',
   'showTiktokNavigator',
-  'autoUpdateIndex'
+  'autoUpdateIndex',
+  'normalWalkStartDepthMap'
 ]
 
 function cellWidthMap(x: number): number {
@@ -256,6 +259,7 @@ export const useGlobalStore = defineStore(
     })
     const dragingTab = ref<{ tabIdx: number; paneIdx: number }>()
     const recent = ref(new Array<{ path: string; key: string, mode: FileTransferTabPane['mode'] }>())
+    const normalWalkStartDepthMap = ref({} as Record<string, number>)
     const time = Date.now()
     const tabListHistoryRecord = ref<{ time: number; tabs: Tab[] }[]>() // [curr,last]
     const saveRecord = () => {
@@ -383,6 +387,7 @@ export const useGlobalStore = defineStore(
       dragingTab,
       saveRecord,
       recent,
+      normalWalkStartDepthMap,
       tabListHistoryRecord,
       gridThumbnailResolution,
       longPressOpenContextMenu,

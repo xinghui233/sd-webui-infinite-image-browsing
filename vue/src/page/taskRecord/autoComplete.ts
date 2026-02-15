@@ -3,7 +3,7 @@ import type { ExtraPathType } from '@/api/db'
 import { t } from '@/i18n'
 import { useGlobalStore } from '@/store/useGlobalStore'
 import { pick, type ReturnTypeAsync } from '@/util'
-import { normalizeRelativePathToAbsolute } from '@/util/path'
+import { normalizeRelativePathToAbsolute, normalize as normalizePath } from '@/util/path'
 import { uniqBy } from 'lodash-es'
 import { delay } from 'vue3-ts-util'
 
@@ -66,6 +66,11 @@ export const getQuickMovePaths = async ({
     desktop: t('desktop')
   }
   const g = useGlobalStore() as any
+  const resolveNormalWalkStartDepth = (path: string) => {
+    const normalized = normalizePath(path)
+    const depth = Number(g.normalWalkStartDepthMap?.[normalized] ?? 1)
+    return Math.max(1, Math.floor(depth || 1))
+  }
   g.extraPathAliasMap = {
     home: home,
     [t('desktop')]: pathMap.desktop,
@@ -89,6 +94,13 @@ export const getQuickMovePaths = async ({
         can_delete: false,
         types: ['preset' as 'preset' | ExtraPathType]
       }
-    }).concat(extra_paths.map(v => ({ key: v.path, zh: v.alias || g.getShortPath(v.path), dir: v.path, can_delete: true, types: v.types })) as any[])
+    }).concat(extra_paths.map(v => ({
+      key: v.path,
+      zh: v.alias || g.getShortPath(v.path),
+      dir: v.path,
+      can_delete: true,
+      types: v.types,
+      normalWalkStartDepth: resolveNormalWalkStartDepth(normalizeRelativePathToAbsolute(v.path, sd_cwd))
+    })) as any[])
   return uniqBy(res, v => v.key + v.types.join())
 }
